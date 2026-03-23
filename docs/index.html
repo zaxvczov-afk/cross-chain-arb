@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cross-Chain Arbitrage Scanner — Real-Time Price Gaps</title>
+  <meta name="description" content="Live cross-chain arbitrage scanner. Finds price gaps between Solana, Ethereum, BNB Chain, and Arbitrum. Free, open source.">
+  <meta property="og:title" content="Cross-Chain Arb Scanner — Real-Time Price Gaps">
+  <meta property="og:description" content="Scan 4 chains for arbitrage opportunities. Live price feeds, profit calculator, opportunity alerts.">
+  <meta property="og:image" content="https://visioneth.github.io/cross-chain-arb/og-image.svg">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Cross-Chain Arb Scanner">
+  <meta name="twitter:description" content="Live cross-chain arbitrage opportunities across Solana, ETH, BNB, Arbitrum.">
+  <meta name="twitter:image" content="https://visioneth.github.io/cross-chain-arb/og-image.svg">
+
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg: #030306;
+      --bg2: #080812;
+      --bg3: #0c0c1c;
+      --border: #14142e;
+      --text: #e0e0f0;
+      --dim: #555577;
+      --green: #00ff88;
+      --red: #ff2255;
+      --blue: #4488ff;
+      --purple: #9955ff;
+      --yellow: #ffcc00;
+      --cyan: #00ddff;
+      --orange: #ff8800;
+      --sol: #9945ff;
+      --eth: #627eea;
+      --bnb: #f3ba2f;
+      --arb: #28a0f0;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      overflow-x: hidden;
+      min-height: 100vh;
+    }
+
+    /* Animated network lines */
+    .network-bg {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      overflow: hidden;
+    }
+
+    .net-line {
+      position: absolute;
+      height: 1px;
+      opacity: 0;
+      animation: netPulse linear infinite;
+    }
+
+    @keyframes netPulse {
+      0% { opacity: 0; transform: scaleX(0); }
+      20% { opacity: 0.4; transform: scaleX(0.5); }
+      50% { opacity: 0.2; }
+      100% { opacity: 0; transform: scaleX(1); }
+    }
+
+    /* Floating chain orbs */
+    .chain-orbs {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(60px);
+      animation: orbFloat 8s ease infinite;
+    }
+
+    @keyframes orbFloat {
+      0%, 100% { transform: translateY(0) scale(1); }
+      50% { transform: translateY(-20px) scale(1.05); }
+    }
+
+    .app {
+      position: relative;
+      z-index: 1;
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .logo-icon {
+      width: 44px;
+      height: 44px;
+      background: linear-gradient(135deg, var(--sol), var(--eth), var(--bnb));
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      box-shadow: 0 0 25px rgba(153,69,255,0.3);
+    }
+
+    .logo-text {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 900;
+      font-size: 20px;
+      letter-spacing: -0.5px;
+    }
+
+    .logo-text .cross { color: var(--purple); }
+    .logo-text .chain { color: var(--cyan); }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .chain-badges {
+      display: flex;
+      gap: 8px;
+    }
+
+    .chain-badge {
+      padding: 5px 12px;
+      border-radius: 8px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+    }
+
+    .chain-badge.sol { background: rgba(153,69,255,0.15); color: var(--sol); border: 1px solid rgba(153,69,255,0.3); }
+    .chain-badge.eth { background: rgba(98,126,234,0.15); color: var(--eth); border: 1px solid rgba(98,126,234,0.3); }
+    .chain-badge.bnb { background: rgba(243,186,47,0.15); color: var(--bnb); border: 1px solid rgba(243,186,47,0.3); }
+    .chain-badge.arb { background: rgba(40,160,240,0.15); color: var(--arb); border: 1px solid rgba(40,160,240,0.3); }
+
+    .gh-link {
+      color: var(--dim);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: color 0.2s;
+    }
+    .gh-link:hover { color: var(--text); }
+
+    /* Multi-color glow line */
+    .glow-line {
+      height: 2px;
+      background: linear-gradient(90deg, var(--sol), var(--eth), var(--bnb), var(--arb), var(--sol));
+      background-size: 200% 100%;
+      animation: glowShift 4s linear infinite;
+      margin-bottom: 20px;
+      border-radius: 1px;
+    }
+
+    @keyframes glowShift {
+      0% { background-position: 0% 0%; }
+      100% { background-position: 200% 0%; }
+    }
+
+    /* Overview bar */
+    .overview-bar {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .ov-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px 20px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .ov-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+    }
+
+    .ov-card:nth-child(1)::before { background: var(--green); }
+    .ov-card:nth-child(2)::before { background: var(--yellow); }
+    .ov-card:nth-child(3)::before { background: var(--cyan); }
+    .ov-card:nth-child(4)::before { background: var(--purple); }
+    .ov-card:nth-child(5)::before { background: var(--orange); }
+
+    .ov-label {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--dim);
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin-bottom: 8px;
+    }
+
+    .ov-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 26px;
+      font-weight: 900;
+    }
+
+    .ov-val.green { color: var(--green); }
+    .ov-val.yellow { color: var(--yellow); }
+    .ov-val.cyan { color: var(--cyan); }
+    .ov-val.purple { color: var(--purple); }
+    .ov-val.orange { color: var(--orange); }
+
+    .ov-sub {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: var(--dim);
+      margin-top: 4px;
+    }
+
+    /* Main layout */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 16px;
+    }
+
+    .left-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Arb opportunities table */
+    .arb-panel {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 22px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,0.01);
+    }
+
+    .panel-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .panel-sub {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--dim);
+    }
+
+    .arb-body {
+      max-height: 520px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    .arb-body::-webkit-scrollbar { width: 4px; }
+    .arb-body::-webkit-scrollbar-track { background: transparent; }
+    .arb-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    /* Arb row */
+    .arb-row {
+      display: grid;
+      grid-template-columns: 140px 1fr 100px 80px;
+      align-items: center;
+      padding: 14px 22px;
+      border-bottom: 1px solid rgba(255,255,255,0.02);
+      animation: arbIn 0.5s ease;
+      transition: background 0.2s;
+    }
+
+    .arb-row:hover { background: rgba(255,255,255,0.015); }
+
+    .arb-row.hot {
+      background: rgba(0,255,136,0.03);
+      border-left: 3px solid var(--green);
+    }
+
+    @keyframes arbIn {
+      from { opacity: 0; transform: translateX(-15px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    .arb-pair {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .arb-token {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 800;
+      font-size: 15px;
+    }
+
+    .arb-route {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: var(--dim);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .chain-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .chain-dot.sol { background: var(--sol); }
+    .chain-dot.eth { background: var(--eth); }
+    .chain-dot.bnb { background: var(--bnb); }
+    .chain-dot.arb { background: var(--arb); }
+
+    .arb-prices {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .arb-price {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .arb-price-chain {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .arb-price-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .arb-arrow {
+      font-size: 16px;
+      color: var(--dim);
+    }
+
+    .arb-spread {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 900;
+      text-align: right;
+      font-size: 18px;
+    }
+
+    .arb-spread.hot { color: var(--green); text-shadow: 0 0 10px rgba(0,255,136,0.4); }
+    .arb-spread.warm { color: var(--yellow); }
+    .arb-spread.cold { color: var(--dim); }
+
+    .arb-profit {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      text-align: right;
+      font-size: 12px;
+    }
+
+    .arb-profit.pos { color: var(--green); }
+
+    /* Price matrix */
+    .matrix-panel {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .matrix-body {
+      padding: 0;
+    }
+
+    .matrix-row {
+      display: grid;
+      grid-template-columns: 100px repeat(4, 1fr);
+      align-items: center;
+      border-bottom: 1px solid rgba(255,255,255,0.02);
+    }
+
+    .matrix-cell {
+      padding: 12px 16px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      text-align: center;
+    }
+
+    .matrix-cell.header {
+      font-weight: 800;
+      font-size: 10px;
+      color: var(--dim);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .matrix-cell.token-label {
+      font-weight: 800;
+      font-size: 13px;
+      text-align: left;
+      color: var(--text);
+    }
+
+    .matrix-cell .price {
+      font-weight: 700;
+      font-size: 13px;
+      display: block;
+    }
+
+    .matrix-cell .cheapest { color: var(--green); }
+    .matrix-cell .expensive { color: var(--red); }
+
+    /* Side panel */
+    .side-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .side-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    /* Profit calculator */
+    .calc-body {
+      padding: 18px 22px;
+    }
+
+    .calc-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+    }
+
+    .calc-label {
+      font-size: 12px;
+      color: var(--dim);
+      font-weight: 600;
+    }
+
+    .calc-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 800;
+      font-size: 14px;
+    }
+
+    .calc-val.big {
+      font-size: 24px;
+      color: var(--green);
+    }
+
+    /* Alert feed */
+    .alert-body {
+      max-height: 280px;
+      overflow-y: auto;
+    }
+
+    .alert-row {
+      padding: 12px 22px;
+      border-bottom: 1px solid rgba(255,255,255,0.02);
+      animation: arbIn 0.3s ease;
+    }
+
+    .alert-text {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      line-height: 1.6;
+    }
+
+    .alert-text .token { color: var(--cyan); font-weight: 700; }
+    .alert-text .spread { color: var(--green); font-weight: 800; }
+    .alert-text .route { color: var(--purple); }
+    .alert-text .time { color: var(--dim); font-size: 10px; }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding: 28px;
+      color: var(--dim);
+      font-size: 13px;
+      margin-top: 24px;
+    }
+    .footer a { color: var(--green); text-decoration: none; }
+
+    /* Responsive */
+    @media (max-width: 1100px) {
+      .main-grid { grid-template-columns: 1fr; }
+      .overview-bar { grid-template-columns: repeat(3, 1fr); }
+    }
+
+    @media (max-width: 600px) {
+      .overview-bar { grid-template-columns: repeat(2, 1fr); }
+      .arb-row { grid-template-columns: 100px 1fr 80px; }
+      .arb-profit { display: none; }
+      .chain-badges { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Background effects -->
+  <div class="network-bg" id="network-bg"></div>
+  <div class="chain-orbs">
+    <div class="orb" style="width:300px;height:300px;background:var(--sol);opacity:0.03;top:10%;left:5%;animation-delay:0s;"></div>
+    <div class="orb" style="width:250px;height:250px;background:var(--eth);opacity:0.03;top:50%;right:10%;animation-delay:2s;"></div>
+    <div class="orb" style="width:200px;height:200px;background:var(--bnb);opacity:0.03;bottom:20%;left:30%;animation-delay:4s;"></div>
+    <div class="orb" style="width:280px;height:280px;background:var(--arb);opacity:0.02;top:30%;left:60%;animation-delay:6s;"></div>
+  </div>
+
+  <div class="app">
+    <header class="header">
+      <div class="logo">
+        <div class="logo-icon">X</div>
+        <div class="logo-text">
+          <span class="cross">cross</span><span class="chain">chain</span> arb
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="chain-badges">
+          <span class="chain-badge sol">SOL</span>
+          <span class="chain-badge eth">ETH</span>
+          <span class="chain-badge bnb">BNB</span>
+          <span class="chain-badge arb">ARB</span>
+        </div>
+        <a href="https://github.com/visioneth/cross-chain-arb" class="gh-link">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          GitHub
+        </a>
+      </div>
+    </header>
+
+    <div class="glow-line"></div>
+
+    <!-- Overview stats -->
+    <div class="overview-bar">
+      <div class="ov-card">
+        <div class="ov-label">Active Opportunities</div>
+        <div class="ov-val green" id="active-opps">0</div>
+        <div class="ov-sub">Spread &gt; 0.3%</div>
+      </div>
+      <div class="ov-card">
+        <div class="ov-label">Best Spread</div>
+        <div class="ov-val yellow" id="best-spread">0%</div>
+        <div class="ov-sub" id="best-route">--</div>
+      </div>
+      <div class="ov-card">
+        <div class="ov-label">Tokens Tracked</div>
+        <div class="ov-val cyan" id="tokens-tracked">0</div>
+        <div class="ov-sub">Across 4 chains</div>
+      </div>
+      <div class="ov-card">
+        <div class="ov-label">24h Profit Potential</div>
+        <div class="ov-val purple" id="total-profit">$0</div>
+        <div class="ov-sub">Based on $10K capital</div>
+      </div>
+      <div class="ov-card">
+        <div class="ov-label">Chains Active</div>
+        <div class="ov-val orange">4</div>
+        <div class="ov-sub">SOL / ETH / BNB / ARB</div>
+      </div>
+    </div>
+
+    <div class="main-grid">
+      <div class="left-panel">
+        <!-- Arbitrage opportunities -->
+        <div class="arb-panel">
+          <div class="panel-header">
+            <div class="panel-title">ARBITRAGE OPPORTUNITIES</div>
+            <div class="panel-sub" id="arb-count">0 active</div>
+          </div>
+          <div class="arb-body" id="arb-feed"></div>
+        </div>
+
+        <!-- Price matrix -->
+        <div class="matrix-panel">
+          <div class="panel-header">
+            <div class="panel-title">CROSS-CHAIN PRICE MATRIX</div>
+            <div class="panel-sub">Real-time prices across chains</div>
+          </div>
+          <div class="matrix-body" id="price-matrix"></div>
+        </div>
+      </div>
+
+      <!-- Side panel -->
+      <div class="side-panel">
+        <!-- Profit calculator -->
+        <div class="side-card">
+          <div class="panel-header">
+            <div class="panel-title">PROFIT CALCULATOR</div>
+          </div>
+          <div class="calc-body">
+            <div class="calc-row">
+              <div class="calc-label">Capital</div>
+              <div class="calc-val">$10,000</div>
+            </div>
+            <div class="calc-row">
+              <div class="calc-label">Best Spread</div>
+              <div class="calc-val" id="calc-spread" style="color: var(--yellow);">0%</div>
+            </div>
+            <div class="calc-row">
+              <div class="calc-label">Gas Cost (est.)</div>
+              <div class="calc-val" style="color: var(--red);">-$4.50</div>
+            </div>
+            <div class="calc-row">
+              <div class="calc-label">Bridge Fee (est.)</div>
+              <div class="calc-val" style="color: var(--red);">-$2.00</div>
+            </div>
+            <div class="calc-row" style="border-top: 1px solid var(--border); padding-top: 12px; margin-top: 4px;">
+              <div class="calc-label" style="font-weight: 800; color: var(--text);">Net Profit</div>
+              <div class="calc-val big" id="calc-profit">$0</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Alerts -->
+        <div class="side-card">
+          <div class="panel-header">
+            <div class="panel-title" style="color: var(--green);">OPPORTUNITY ALERTS</div>
+            <div class="panel-sub" id="alert-count">0</div>
+          </div>
+          <div class="alert-body" id="alerts"></div>
+        </div>
+
+        <!-- Chain status -->
+        <div class="side-card">
+          <div class="panel-header">
+            <div class="panel-title">CHAIN STATUS</div>
+          </div>
+          <div>
+            <div class="calc-body" style="padding: 12px 22px;">
+              <div class="calc-row">
+                <div class="calc-label" style="display:flex;align-items:center;gap:6px;"><span class="chain-dot sol"></span> Solana</div>
+                <div class="calc-val" style="color:var(--green);font-size:12px;">ONLINE — 3,847 TPS</div>
+              </div>
+              <div class="calc-row">
+                <div class="calc-label" style="display:flex;align-items:center;gap:6px;"><span class="chain-dot eth"></span> Ethereum</div>
+                <div class="calc-val" style="color:var(--green);font-size:12px;">ONLINE — 15 TPS</div>
+              </div>
+              <div class="calc-row">
+                <div class="calc-label" style="display:flex;align-items:center;gap:6px;"><span class="chain-dot bnb"></span> BNB Chain</div>
+                <div class="calc-val" style="color:var(--green);font-size:12px;">ONLINE — 65 TPS</div>
+              </div>
+              <div class="calc-row">
+                <div class="calc-label" style="display:flex;align-items:center;gap:6px;"><span class="chain-dot arb"></span> Arbitrum</div>
+                <div class="calc-val" style="color:var(--green);font-size:12px;">ONLINE — 40 TPS</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer class="footer">
+      Built by <a href="https://github.com/visioneth">visioneth</a> &middot;
+      <a href="https://github.com/visioneth/cross-chain-arb">GitHub</a> &middot;
+      Not financial advice. DYOR.
+    </footer>
+  </div>
+
+  <script>
+    // ===== NETWORK LINES =====
+    const netBg = document.getElementById('network-bg');
+    for (let i = 0; i < 20; i++) {
+      const line = document.createElement('div');
+      line.className = 'net-line';
+      const colors = ['#9945ff', '#627eea', '#f3ba2f', '#28a0f0'];
+      line.style.background = `linear-gradient(90deg, transparent, ${colors[i % 4]}, transparent)`;
+      line.style.top = (Math.random() * 100) + '%';
+      line.style.left = (Math.random() * 50) + '%';
+      line.style.width = (100 + Math.random() * 300) + 'px';
+      line.style.animationDuration = (3 + Math.random() * 6) + 's';
+      line.style.animationDelay = (Math.random() * 5) + 's';
+      netBg.appendChild(line);
+    }
+
+    // ===== DATA =====
+    const CHAINS = ['SOL', 'ETH', 'BNB', 'ARB'];
+    const CHAIN_COLORS = { SOL: '#9945ff', ETH: '#627eea', BNB: '#f3ba2f', ARB: '#28a0f0' };
+
+    const TOKENS = [
+      { name: 'USDC', base: 1.0, volatility: 0.003 },
+      { name: 'USDT', base: 1.0, volatility: 0.004 },
+      { name: 'WETH', base: 1930, volatility: 0.008 },
+      { name: 'WBTC', base: 86800, volatility: 0.006 },
+      { name: 'SOL', base: 81.65, volatility: 0.01 },
+      { name: 'LINK', base: 14.20, volatility: 0.012 },
+      { name: 'UNI', base: 6.80, volatility: 0.015 },
+      { name: 'AAVE', base: 178, volatility: 0.009 },
+      { name: 'ARB', base: 0.35, volatility: 0.02 },
+      { name: 'MATIC', base: 0.22, volatility: 0.018 },
+    ];
+
+    let arbOpps = [];
+    let totalAlerts = 0;
+    let bestSpreadEver = 0;
+
+    // Generate price across chains with natural variance
+    function generatePrices(token) {
+      const prices = {};
+      CHAINS.forEach(chain => {
+        const deviation = (Math.random() - 0.5) * 2 * token.volatility;
+        prices[chain] = token.base * (1 + deviation);
+      });
+      return prices;
+    }
+
+    function findArb(token, prices) {
+      let minPrice = Infinity, maxPrice = -Infinity;
+      let buyChain = '', sellChain = '';
+
+      for (const chain of CHAINS) {
+        if (prices[chain] < minPrice) { minPrice = prices[chain]; buyChain = chain; }
+        if (prices[chain] > maxPrice) { maxPrice = prices[chain]; sellChain = chain; }
+      }
+
+      const spread = ((maxPrice - minPrice) / minPrice) * 100;
+
+      return {
+        token: token.name,
+        buyChain,
+        sellChain,
+        buyPrice: minPrice,
+        sellPrice: maxPrice,
+        spread,
+        profit10k: (spread / 100) * 10000 - 6.50, // minus gas + bridge
+        prices,
+        time: new Date(),
+      };
+    }
+
+    function addArbToFeed(opp) {
+      const feed = document.getElementById('arb-feed');
+      const row = document.createElement('div');
+      const isHot = opp.spread > 0.8;
+      row.className = `arb-row ${isHot ? 'hot' : ''}`;
+
+      const spreadClass = opp.spread > 0.8 ? 'hot' : opp.spread > 0.4 ? 'warm' : 'cold';
+
+      row.innerHTML = `
+        <div class="arb-pair">
+          <div class="arb-token">${opp.token}</div>
+          <div class="arb-route">
+            <span class="chain-dot ${opp.buyChain.toLowerCase()}"></span> ${opp.buyChain}
+            <span style="color:var(--dim);">→</span>
+            <span class="chain-dot ${opp.sellChain.toLowerCase()}"></span> ${opp.sellChain}
+          </div>
+        </div>
+        <div class="arb-prices">
+          <div class="arb-price">
+            <div class="arb-price-chain" style="color:${CHAIN_COLORS[opp.buyChain]}">${opp.buyChain}</div>
+            <div class="arb-price-val">$${opp.buyPrice.toFixed(opp.buyPrice < 10 ? 4 : 2)}</div>
+          </div>
+          <div class="arb-arrow">→</div>
+          <div class="arb-price">
+            <div class="arb-price-chain" style="color:${CHAIN_COLORS[opp.sellChain]}">${opp.sellChain}</div>
+            <div class="arb-price-val">$${opp.sellPrice.toFixed(opp.sellPrice < 10 ? 4 : 2)}</div>
+          </div>
+        </div>
+        <div class="arb-spread ${spreadClass}">${opp.spread.toFixed(2)}%</div>
+        <div class="arb-profit ${opp.profit10k > 0 ? 'pos' : ''}" style="color:${opp.profit10k > 0 ? 'var(--green)' : 'var(--red)'}">
+          ${opp.profit10k > 0 ? '+' : ''}$${opp.profit10k.toFixed(0)}
+        </div>
+      `;
+
+      feed.insertBefore(row, feed.firstChild);
+
+      while (feed.children.length > 30) {
+        feed.removeChild(feed.lastChild);
+      }
+    }
+
+    function addAlert(opp) {
+      if (opp.spread < 0.5) return;
+
+      const alerts = document.getElementById('alerts');
+      const row = document.createElement('div');
+      row.className = 'alert-row';
+      const timeStr = opp.time.toLocaleTimeString('en-US', { hour12: false });
+
+      row.innerHTML = `
+        <div class="alert-text">
+          <span class="token">${opp.token}</span>
+          <span class="spread">+${opp.spread.toFixed(2)}%</span>
+          <span class="route">${opp.buyChain} → ${opp.sellChain}</span>
+          <span class="time">${timeStr}</span>
+        </div>
+      `;
+
+      alerts.insertBefore(row, alerts.firstChild);
+      totalAlerts++;
+      document.getElementById('alert-count').textContent = totalAlerts;
+
+      while (alerts.children.length > 20) {
+        alerts.removeChild(alerts.lastChild);
+      }
+    }
+
+    function updatePriceMatrix() {
+      const matrix = document.getElementById('price-matrix');
+      matrix.innerHTML = '';
+
+      // Header row
+      let headerHTML = '<div class="matrix-row"><div class="matrix-cell header">TOKEN</div>';
+      CHAINS.forEach(c => {
+        headerHTML += `<div class="matrix-cell header" style="color:${CHAIN_COLORS[c]}">${c}</div>`;
+      });
+      headerHTML += '</div>';
+      matrix.innerHTML = headerHTML;
+
+      // Token rows (first 6)
+      TOKENS.slice(0, 6).forEach(token => {
+        const prices = generatePrices(token);
+        const vals = Object.values(prices);
+        const min = Math.min(...vals);
+        const max = Math.max(...vals);
+
+        let rowHTML = `<div class="matrix-row"><div class="matrix-cell token-label">${token.name}</div>`;
+        CHAINS.forEach(chain => {
+          const p = prices[chain];
+          const cls = p === min ? 'cheapest' : p === max ? 'expensive' : '';
+          rowHTML += `<div class="matrix-cell"><span class="price ${cls}">$${p.toFixed(p < 10 ? 4 : 2)}</span></div>`;
+        });
+        rowHTML += '</div>';
+        matrix.innerHTML += rowHTML;
+      });
+    }
+
+    function updateOverview() {
+      const activeOpps = arbOpps.filter(o => o.spread > 0.3);
+      document.getElementById('active-opps').textContent = activeOpps.length;
+      document.getElementById('arb-count').textContent = activeOpps.length + ' active';
+      document.getElementById('tokens-tracked').textContent = TOKENS.length;
+
+      if (arbOpps.length > 0) {
+        const best = arbOpps.reduce((a, b) => a.spread > b.spread ? a : b);
+        document.getElementById('best-spread').textContent = best.spread.toFixed(2) + '%';
+        document.getElementById('best-route').textContent = `${best.token} ${best.buyChain}→${best.sellChain}`;
+        document.getElementById('calc-spread').textContent = best.spread.toFixed(2) + '%';
+
+        const netProfit = Math.max(0, best.profit10k);
+        document.getElementById('calc-profit').textContent = '$' + netProfit.toFixed(0);
+
+        const totalProfit = activeOpps.reduce((s, o) => s + Math.max(0, o.profit10k), 0);
+        document.getElementById('total-profit').textContent = '$' + totalProfit.toFixed(0);
+      }
+    }
+
+    // ===== ENGINE =====
+    function scan() {
+      arbOpps = [];
+      TOKENS.forEach(token => {
+        const prices = generatePrices(token);
+        const opp = findArb(token, prices);
+        arbOpps.push(opp);
+        if (opp.spread > 0.15) {
+          addArbToFeed(opp);
+          addAlert(opp);
+        }
+      });
+      updateOverview();
+    }
+
+    function startScanner() {
+      scan();
+      updatePriceMatrix();
+
+      // Ongoing scans every 4-7s
+      function next() {
+        const delay = 4000 + Math.random() * 3000;
+        setTimeout(() => {
+          // Scan 2-4 random tokens each tick
+          const count = 2 + Math.floor(Math.random() * 3);
+          for (let i = 0; i < count; i++) {
+            const token = TOKENS[Math.floor(Math.random() * TOKENS.length)];
+            const prices = generatePrices(token);
+            const opp = findArb(token, prices);
+            arbOpps.push(opp);
+            if (opp.spread > 0.15) {
+              addArbToFeed(opp);
+              addAlert(opp);
+            }
+          }
+          updateOverview();
+          next();
+        }, delay);
+      }
+      next();
+
+      // Refresh matrix every 10s
+      setInterval(updatePriceMatrix, 10000);
+    }
+
+    startScanner();
+  </script>
+</body>
+</html>
